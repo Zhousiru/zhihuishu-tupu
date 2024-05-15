@@ -16,7 +16,7 @@ import dotenv from 'dotenv'
 dotenv.config() // Load environment variables from .env file
 
 const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
+  baseURL: process.env.BASE_URL,
   apiKey: process.env.KEY,
 })
 
@@ -82,7 +82,7 @@ function delay(time: number) {
   const whichIndex = tasks.findIndex((v) => v.title.startsWith(which))
   tasks.splice(0, whichIndex)
 
-  for (const [index, task] of tasks.entries()) {
+  for (const task of tasks) {
     if (task.percent === 100) continue
 
     await delay(500)
