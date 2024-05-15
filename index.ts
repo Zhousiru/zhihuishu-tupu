@@ -177,6 +177,7 @@ function delay(time: number) {
             method: 'POST',
             headers: {
               'Content-Type': 'application/x-www-form-urlencoded',
+              Authorization: process.env.TIKU_TOKEN!,
             },
             body: new URLSearchParams({
               question: qStem,
