@@ -7,6 +7,11 @@ interface TaskData {
   percent: number
 }
 
+interface QaData {
+  stem: string
+  answers: number[]
+}
+
 import dotenv from 'dotenv'
 dotenv.config() // Load environment variables from .env file
 
@@ -80,170 +85,198 @@ function delay(time: number) {
   for (const [index, task] of tasks.entries()) {
     if (task.percent === 100) continue
 
-    console.log(`即将开始做：${task.title}`)
-    let targetCardEl: any
+    await delay(500)
+    const qa: QaData[] = []
+    for (;;) {
+      await delay(2000)
+      console.log(`即将开始做：${task.title}`)
+      let targetCardEl: any
 
-    for (const el of await page.$$('.card-item')) {
-      const titleEl = await el.$('.point-title')
-      const title = (await page.evaluate(
-        (el) => el!.textContent,
-        titleEl
-      ))!.trim()
-      if (title === task.title) {
-        targetCardEl = el
-        break
+      for (const el of await page.$$('.card-item')) {
+        const titleEl = await el.$('.point-title')
+        const title = (await page.evaluate(
+          (el) => el!.textContent,
+          titleEl
+        ))!.trim()
+        if (title === task.title) {
+          targetCardEl = el
+          break
+        }
       }
-    }
 
-    await targetCardEl!.click()
-
-    try {
-      await page.waitForSelector('.practice-handle')
-    } catch (_) {
-      page.goBack()
-      await delay(500)
-      continue
-    }
-
-    await delay(1000)
-    ;(await page.$('.practice-handle'))!.click()
-
-    await page.waitForSelector('.questions-list')
-    const qEl = await (await page.$('.questions-list'))!.$$('.questions-item')
-    const qCount = qEl.length
-
-    console.log(`- 有 ${qCount} 道题目`)
-
-    for (let qIndex = 0; qIndex < qCount; qIndex++) {
-      console.log(`- 正在做第 ${qIndex + 1} 道`)
-      // qEl[qIndex].click()
-
+      await targetCardEl!.click()
       await delay(1000)
 
-      const qTypeEl = await page.$('.question-type')
-      const qType = (await page.evaluate(
-        (el) => el!.textContent,
-        qTypeEl
-      ))!.trim()
+      if (await page.$('.empty-text')) {
+        page.goBack()
+        break
+      }
 
-      const qStemEl = await page.$('.stem')
-      const qStem = (await page.evaluate(
-        (el) => el!.textContent,
-        qStemEl
-      ))!.trim()
+      ;(await page.$('.practice-handle'))!.click()
 
-      const qDetailEl = await page.$('.question-detail-item.ques-detail')
-      const qDetails = await Promise.all(
-        (
-          await qDetailEl!.$$('label')
-        ).map(async (v) =>
-          (await page.evaluate((el) => el!.textContent, v))!.trim()
+      await page.waitForSelector('.questions-list')
+      const qEl = await (await page.$('.questions-list'))!.$$('.questions-item')
+      const qCount = qEl.length
+
+      console.log(`- 有 ${qCount} 道题目`)
+      let isWrong = false
+
+      for (let qIndex = 0; qIndex < qCount; qIndex++) {
+        console.log(`- 正在做第 ${qIndex + 1} 道`)
+        // qEl[qIndex].click()
+
+        await delay(1000)
+
+        const qTypeEl = await page.$('.question-type')
+        const qType = (await page.evaluate(
+          (el) => el!.textContent,
+          qTypeEl
+        ))!.trim()
+
+        const qStemEl = await page.$('.stem')
+        const qStem = (await page.evaluate(
+          (el) => el!.textContent,
+          qStemEl
+        ))!.trim()
+
+        const qDetailEl = await page.$('.question-detail-item.ques-detail')
+        const qDetails = await Promise.all(
+          (
+            await qDetailEl!.$$('label')
+          ).map(async (v) =>
+            (await page.evaluate((el) => el!.textContent, v))!.trim()
+          )
         )
-      )
 
-      if (!['【单选题】', '【多选题】'].includes(qType)) {
-        console.log(`  - 题目类型：${qType}，不支持，自己做`)
+        const qaIndex = qa.findIndex((v) => v.stem === qStem)
+        if (qaIndex !== -1) {
+          console.log('  - 使用缓存答案')
+          const choiceNum = qa[qaIndex].answers
+          for (const c of choiceNum) {
+            ;(await qDetailEl!.$(`label:nth-of-type(${c})`))?.click()
+            await delay(500)
+          }
+          ;(await page.$('.next-btns-box'))?.click()
+          await delay(500)
+          ;(await page.$('.next-btns-box'))?.click()
+          continue
+        }
 
-        continue
-      }
+        if (!['【单选题】', '【多选题】'].includes(qType)) {
+          console.log(`  - 题目类型：${qType}，不支持，自己做`)
 
-      console.log(`  - 题目类型：${qType}`)
-      console.log(`  - 题干：${qStem}`)
-      console.log(`  - 选项：\n    - ${qDetails.join('\n    - ')}`)
+          continue
+        }
 
-      const resp: any = await (
-        await fetch('http://cx.icodef.com/wyn-nb?v=4', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: new URLSearchParams({
-            question: qStem,
-          }).toString(),
+        console.log(`  - 题目类型：${qType}`)
+        console.log(`  - 题干：${qStem}`)
+        console.log(`  - 选项：\n    - ${qDetails.join('\n    - ')}`)
+
+        const resp: any = await (
+          await fetch('http://cx.icodef.com/wyn-nb?v=4', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams({
+              question: qStem,
+            }).toString(),
+          })
+        ).json()
+
+        let searchResult = ''
+
+        if (resp.code !== 1) {
+          searchResult = '无结果'
+        } else {
+          searchResult = resp.data
+        }
+
+        console.log(`  - 题库答案：${searchResult}`)
+
+        const aiResp = await openai.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是一个解题助手，用户将给你题目类型、题干、选项、以及参考答案，你需要根据参考答案匹配对应的选项。如果参考答案为“无结果”，请简要分析题目后给出正确的答案，注意需要简要分析。答案使用 ## 包裹，例如：##A##、##CD##',
+            },
+            {
+              role: 'user',
+              content:
+                '【单选题】CPU地址线数量与下列哪项指标密切相关（  ）。\n\nA.内存容量\n\nB.存储数据位\n\nC.运算速度\n\nD.运算精确度\n\n参考答案：内存容量',
+            },
+            {
+              role: 'assistant',
+              content: '##A##',
+            },
+            {
+              role: 'user',
+              content: `${qType}${qStem}\n\n${qDetails.join(
+                '\n\n'
+              )}\n\n参考答案：${searchResult}`,
+            },
+          ],
         })
-      ).json()
 
-      let searchResult = ''
+        const aiMsg = aiResp.choices[0].message.content
+        if (!aiMsg) {
+          console.error('  - AI 响应错误')
+          continue
+        }
+        const matches = aiMsg.match(/##(.*?)##/)
+        if (!matches) {
+          console.error('  - AI 响应错误')
+          continue
+        }
 
-      if (resp.code !== 1) {
-        searchResult = '无结果'
-      } else {
-        searchResult = resp.data
-      }
+        const choice = matches[1]
+        const choiceNum = choice.split('').map((v) => v.charCodeAt(0) - 64)
 
-      console.log(`  - 题库答案：${searchResult}`)
+        console.log(`  - 选择：${choice}`)
 
-      const aiResp = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content:
-              '你是一个解题助手，用户将给你题目类型、题干、选项、以及参考答案，你需要根据参考答案匹配对应的选项。如果参考答案为“无结果”，请简要分析题目后给出正确的答案，注意需要简要分析。答案使用 ## 包裹，例如：##A##、##CD##',
-          },
-          {
-            role: 'user',
-            content:
-              '【单选题】CPU地址线数量与下列哪项指标密切相关（  ）。\n\nA.内存容量\n\nB.存储数据位\n\nC.运算速度\n\nD.运算精确度\n\n参考答案：内存容量',
-          },
-          {
-            role: 'assistant',
-            content: '##A##',
-          },
-          {
-            role: 'user',
-            content: `${qType}${qStem}\n\n${qDetails.join(
-              '\n\n'
-            )}\n\n参考答案：${searchResult}`,
-          },
-        ],
-      })
+        for (const c of choiceNum) {
+          ;(await qDetailEl!.$(`label:nth-of-type(${c})`))?.click()
+          await delay(500)
+        }
 
-      const aiMsg = aiResp.choices[0].message.content
-      if (!aiMsg) {
-        console.error('  - AI 响应错误')
-        continue
-      }
-      const matches = aiMsg.match(/##(.*?)##/)
-      if (!matches) {
-        console.error('  - AI 响应错误')
-        continue
-      }
+        ;(await page.$('.next-btns-box'))?.click()
 
-      const choice = matches[1]
-      const choiceNum = choice.split('').map((v) => v.charCodeAt(0) - 64)
+        await delay(500)
 
-      console.log(`  - 选择：${choice}`)
+        await page.waitForSelector('.answer-tips')
+        const resultEl = await page.$('.answer-tips')!
+        const result = (await page.evaluate(
+          (el) => el!.textContent,
+          resultEl
+        ))!.trim()
 
-      for (const c of choiceNum) {
-        ;(await qDetailEl!.$(`label:nth-of-type(${c})`))?.click()
+        if (result.includes('回答正确')) {
+          qa.push({ stem: qStem, answers: choiceNum })
+        } else {
+          isWrong = true
+          const rightEl = await page.$('.question-answer-right')!
+          const right = (await page.evaluate(
+            (el) => el!.textContent,
+            rightEl
+          ))!.replace(/[^A-Za-z]/g, '')
+          qa.push({
+            stem: qStem,
+            answers: right.split('').map((v: string) => v.charCodeAt(0) - 64),
+          })
+        }
+
+        ;(await page.$('.next-btns-box'))?.click()
         await delay(500)
       }
 
-      ;(await page.$('.next-btns-box'))?.click()
       await delay(500)
-      ;(await page.$('.next-btns-box'))?.click()
+      page.goBack()
+
+      if (!isWrong) {
+        break
+      }
     }
-
-    await delay(500)
-    page.goBack()
-    await delay(500)
   }
-
-  // // Type into search box
-  // await page.type('.devsite-search-field', 'automate beyond recorder')
-
-  // // Wait and click on first result
-  // const searchResultSelector = '.devsite-result-item-link'
-  // await page.waitForSelector(searchResultSelector)
-  // await page.click(searchResultSelector)
-
-  // // Locate the full title with a unique string
-  // const textSelector = await page.waitForSelector('text/Customize and automate')
-  // const fullTitle = await textSelector?.evaluate((el) => el.textContent)
-
-  // // Print the full title
-  // console.log('The title of this blog post is "%s".', fullTitle)
-
-  // await browser.close()
 })()
