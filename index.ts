@@ -61,15 +61,23 @@ function delay(time: number) {
         titleEl
       ))!.trim()
       const percentEl = await v.$('.card-percent')
-      const percent = Number(
-        (await page.evaluate((el) => el!.textContent, percentEl))!
-          .trim()
-          .slice(0, -1)
-      )
-      return {
-        title,
-        percent,
-      } as TaskData
+
+      if (percentEl) {
+        const percent = Number(
+          (await page.evaluate((el) => el!.textContent, percentEl))!
+            .trim()
+            .slice(0, -1)
+        )
+        return {
+          title,
+          percent,
+        } as TaskData
+      } else {
+        return {
+          title,
+          percent: 100,
+        } as TaskData
+      }
     })
   )
 
