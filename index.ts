@@ -170,8 +170,25 @@ function delay(time: number) {
           continue
         }
 
-        if (!['【单选题】', '【多选题】'].includes(qType)) {
+        if (
+          ![
+            '【单选题】',
+            '【多选题】',
+            '【填空题主观题】',
+            '【判断题】',
+          ].includes(qType)
+        ) {
           console.log(`  - 题目类型：${qType}，不支持，自己做`)
+
+          continue
+        }
+
+        if (qType === '【填空题主观题】') {
+          await delay(1000)
+          ;(await page.$('.next-btns-box'))?.click()
+          await delay(1000)
+          ;(await page.$('.next-btns-box'))?.click()
+          await delay(1000)
 
           continue
         }
